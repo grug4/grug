@@ -21,16 +21,6 @@ document.addEventListener("DOMContentLoaded", function() {
     document.head.appendChild(container);
 });
 
-// auth-check.js
-
-// Check if user is logged in
-document.addEventListener('DOMContentLoaded', () => {
-    const loggedInUser = localStorage.getItem('loggedInUser');
-    if (!loggedInUser) {
-        window.location.href = '../index.html'; // Redirect to login page if not logged in
-    }
-});
-
 const asciiArt1 = `
  ########******************************************* 
 #                                                   *
@@ -72,8 +62,7 @@ document.addEventListener("DOMContentLoaded", function() {
         "../js/LoadingScreen.js",
         "../js/NotSlick.js",
         "../js/DebuggerCat.js",
-        "../js/theme-html.js",
-        "../js/BanLogout.js"
+        "../js/theme-html.js"
     ];
     function loadScripts(urls) {
         if (urls.length === 0) return;
