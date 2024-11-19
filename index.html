@@ -1,6 +1,9 @@
 <head>
   <script>
-
+document.addEventListener('DOMContentLoaded', function() {
+    localStorage.setItem('premium', 'true');
+    localStorage.setItem('loggedInUser', 'fractureUser');
+});
   </script>
   <script src="js/chromebookcheck.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
