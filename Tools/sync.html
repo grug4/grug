@@ -86,13 +86,16 @@
         }
     </style>
 </head>
-<body>
+<body><body>
     <div class="center-div">
         <p id="statusText">Sync Fracture Sites</p>
         <div class="progress-bar">
             <div id="progressBar" class="progress"></div>
         </div>
         <p id="errorMessage" class="error-message"></p>
+    </div>
+    <div>
+        <input type="text" id="storageId" placeholder="Enter Storage ID">
     </div>
     <div class="button-container">
         <button class="sync-button" id="exportBtn">Export</button>
@@ -101,125 +104,148 @@
     <input type="file" id="fileInput" accept=".json">
 
     <script>
-// Utility functions
-const getCurrentDateTime = () => new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+    import { createClient } from '@supabase/supabase-js'
 
-const updateUI = (() => {
-    const statusText = document.getElementById('statusText');
-    const progressBar = document.getElementById('progressBar');
-    const errorMessage = document.getElementById('errorMessage');
-    
-    return {
-        status: (message, progress = null) => {
-            statusText.textContent = message;
-            if (progress !== null) {
-                progressBar.style.width = `${progress}%`;
+    // Create a single supabase client for interacting with your database
+    const supabase = createClient('https://jrswnwcmixfdqtaituik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impyc3dud2NtaXhmZHF0YWl0dWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY0NTk0MzIsImV4cCI6MjA1MjAzNTQzMn0.mzYL0lq5lJ4q6hXijY0QK-jpZPqLSQtjsBraX-DNBA8')
+
+    // Utility functions
+    const getCurrentDateTime = () => new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+
+    const updateUI = (() => {
+        const statusText = document.getElementById('statusText');
+        const progressBar = document.getElementById('progressBar');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        return {
+            status: (message, progress = null) => {
+                statusText.textContent = message;
+                if (progress !== null) {
+                    progressBar.style.width = `${progress}%`;
+                }
+            },
+            error: (message) => {
+                errorMessage.textContent = message;
+            },
+            reset: () => {
+                statusText.textContent = 'Sync Fracture Sites';
+                progressBar.style.width = '0%';
+                errorMessage.textContent = '';
             }
-        },
-        error: (message) => {
-            errorMessage.textContent = message;
-        },
-        reset: () => {
-            statusText.textContent = 'Sync Fracture Sites';
-            progressBar.style.width = '0%';
-            errorMessage.textContent = '';
+        };
+    })();
+
+    // Chunk processing function
+    const processInChunks = async (items, processItem, updateProgress) => {
+        const chunkSize = 100;
+        const totalItems = items.length;
+
+        for (let i = 0; i < totalItems; i += chunkSize) {
+            const chunk = items.slice(i, Math.min(i + chunkSize, totalItems));
+            await Promise.all(chunk.map(processItem));
+            updateProgress(Math.min(i + chunkSize, totalItems), totalItems);
+            await new Promise(resolve => setTimeout(resolve, 0));
         }
     };
-})();
 
-// Chunk processing function
-const processInChunks = async (items, processItem, updateProgress) => {
-    const chunkSize = 100;
-    const totalItems = items.length;
+    // Export function
+    const exportLocalStorage = async () => {
+        const storageId = document.getElementById('storageId').value.trim();
+        if (!storageId) {
+            updateUI.error('Please enter a Storage ID');
+            return;
+        }
 
-    for (let i = 0; i < totalItems; i += chunkSize) {
-        const chunk = items.slice(i, Math.min(i + chunkSize, totalItems));
-        await Promise.all(chunk.map(processItem));
-        updateProgress(Math.min(i + chunkSize, totalItems), totalItems);
-        // Allow UI to update and other tasks to run
-        await new Promise(resolve => setTimeout(resolve, 0));
-    }
-};
+        updateUI.status('Preparing export...', 0);
+        updateUI.error('');
 
-// Export function
-const exportLocalStorage = async () => {
-    updateUI.status('Preparing export...', 0);
-    updateUI.error('');
+        try {
+            const keys = Object.keys(localStorage);
+            const totalItems = keys.length;
+            const localStorageData = {};
 
-    try {
-        const keys = Object.keys(localStorage);
-        const totalItems = keys.length;
-        const localStorageData = {};
+            await processInChunks(
+                keys,
+                async (key) => {
+                    localStorageData[key] = localStorage.getItem(key);
+                },
+                (processed, total) => {
+                    updateUI.status(`Exporting... ${processed}/${total}`, (processed / total) * 100);
+                }
+            );
 
-        await processInChunks(
-            keys,
-            async (key) => {
-                localStorageData[key] = localStorage.getItem(key);
-            },
-            (processed, total) => {
-                updateUI.status(`Exporting... ${processed}/${total}`, (processed / total) * 100);
-            }
-        );
+            // Save to Supabase
+            const { data, error } = await supabase
+                .from('storage_data')
+                .upsert({ 
+                    id: storageId,
+                    data: localStorageData,
+                    updated_at: new Date().toISOString()
+                });
 
-        const blob = new Blob([JSON.stringify(localStorageData)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Fracture-Sync${getCurrentDateTime()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+            if (error) throw error;
 
-        updateUI.status('Export Complete!', 100);
-    } catch (error) {
-        console.error('Export error:', error);
-        updateUI.status('Export Failed!', 0);
-        updateUI.error(`Error: ${error.message}`);
-    }
+            updateUI.status('Export Complete!', 100);
+        } catch (error) {
+            console.error('Export error:', error);
+            updateUI.status('Export Failed!', 0);
+            updateUI.error(`Error: ${error.message}`);
+        }
 
-    setTimeout(updateUI.reset, 2000);
-};
-
-// Import function
-const importLocalStorage = async (file) => {
-    updateUI.status('Preparing import...', 0);
-    updateUI.error('');
-
-    try {
-        const text = await file.text();
-        const importedData = JSON.parse(text);
-        const keys = Object.keys(importedData);
-        const totalItems = keys.length;
-
-        localStorage.clear();
-
-        await processInChunks(
-            keys,
-            async (key) => {
-                localStorage.setItem(key, importedData[key]);
-            },
-            (processed, total) => {
-                updateUI.status(`Importing... ${processed}/${total}`, (processed / total) * 100);
-            }
-        );
-
-        updateUI.status('Import Complete!', 100);
-        setTimeout(() => location.reload(), 1000);
-    } catch (error) {
-        console.error('Import error:', error);
-        updateUI.status('Import Failed!', 0);
-        updateUI.error(`Error: ${error.message}`);
         setTimeout(updateUI.reset, 2000);
-    }
-};
+    };
 
-// Event listeners
-document.getElementById('exportBtn').addEventListener('click', exportLocalStorage);
-document.getElementById('importBtn').addEventListener('click', () => document.getElementById('fileInput').click());
-document.getElementById('fileInput').addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        importLocalStorage(e.target.files[0]);
-    }
-});
+    // Import function
+    const importLocalStorage = async () => {
+        const storageId = document.getElementById('storageId').value.trim();
+        if (!storageId) {
+            updateUI.error('Please enter a Storage ID');
+            return;
+        }
+
+        updateUI.status('Preparing import...', 0);
+        updateUI.error('');
+
+        try {
+            // Fetch from Supabase
+            const { data, error } = await supabase
+                .from('storage_data')
+                .select('data')
+                .eq('id', storageId)
+                .single();
+
+            if (error) throw error;
+            if (!data) throw new Error('No data found for this Storage ID');
+
+            const importedData = data.data;
+            const keys = Object.keys(importedData);
+            const totalItems = keys.length;
+
+            localStorage.clear();
+
+            await processInChunks(
+                keys,
+                async (key) => {
+                    localStorage.setItem(key, importedData[key]);
+                },
+                (processed, total) => {
+                    updateUI.status(`Importing... ${processed}/${total}`, (processed / total) * 100);
+                }
+            );
+
+            updateUI.status('Import Complete!', 100);
+            setTimeout(() => location.reload(), 1000);
+        } catch (error) {
+            console.error('Import error:', error);
+            updateUI.status('Import Failed!', 0);
+            updateUI.error(`Error: ${error.message}`);
+            setTimeout(updateUI.reset, 2000);
+        }
+    };
+
+    // Event listeners
+    document.getElementById('exportBtn').addEventListener('click', exportLocalStorage);
+    document.getElementById('importBtn').addEventListener('click', importLocalStorage);
     </script>
 </body>
 </html>
